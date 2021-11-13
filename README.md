@@ -1,4 +1,4 @@
-este proyecto esta desarrollado en node.js
+this project is developed with node.js
 
 ## Available Scripts
 
