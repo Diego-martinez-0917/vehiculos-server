@@ -1,5 +1,6 @@
 let { getConection, sql } = require("../database/connection");
 let queries = require("../database/queries");
+const moment = require("moment");
 class OrderControler {
   createNewOrder = async (req, res) => {
     const { vehicle, quantity, date } = req.body;
@@ -21,7 +22,6 @@ class OrderControler {
       });
     } catch (error) {
       res.status(400).json(error.message);
-      console.log(error.message);
     }
   };
 
@@ -30,12 +30,17 @@ class OrderControler {
       const pool = await getConection();
       const vehicles = (await pool.request().query(queries.getAllvehicles))
         .recordset;
-      console.log(vehicles);
-      let day = new Date();
+
+      let day = moment().format();
       let days = [];
-      let pending = {}
+      let pending = [];
 
       for (let numDay = 0; numDay < 7; numDay++) {
+        const dayWeek = moment(day).day();
+        let limit = 16;
+        if (dayWeek === 0) limit = 0;
+        if (dayWeek === 6) limit = 8;
+
         let hours = 0;
         let result = await pool
           .request()
@@ -45,40 +50,66 @@ class OrderControler {
 
         let obj = {};
 
-        if (Object.keys(pending).length > 0) {
-          obj = pending
-        }
-
         for (let i = 0; i < vehicles.length; i++) {
           const idCurrentVehicle = vehicles[i].id;
-          const manufactureTimeVehicle = vehicles[i].manufactureTime;         
-          const findVihicle =result.find((elemt) => elemt.idVehiculo === idCurrentVehicle)
-          if (findVihicle) {
-            const quantityResultVehicle =  result.find(res => findVihicle.idVehiculo === res.idVehiculo ).quantity;
-                        
-            let limit = 16;
-            const dayWeek = day.getDay();
-            if (dayWeek === 0) limit = 0;
-            if (dayWeek === 6) limit = 8;
+          const manufactureTimeVehicle = vehicles[i].manufactureTime;
+          const findPendingVehicule = pending.find(
+            (val) => val.idVehiculo === idCurrentVehicle
+          );
+          const findVehicule = result.find(
+            (v) => v.idVehiculo === idCurrentVehicle
+          );
 
-            hours += quantityResultVehicle * manufactureTimeVehicle;
-            if (hours <= limit) {
-              obj[idCurrentVehicle] = quantityResultVehicle;
-            } else {
-              hours -= quantityResultVehicle * manufactureTimeVehicle;
-              obj[idCurrentVehicle] = 0;
-              pending[idCurrentVehicle]= quantityResultVehicle ;
+          if (findPendingVehicule) {
+            pending = pending.filter(
+              (v) => v.idVehiculo !== findPendingVehicule.idVehiculo
+            );
+            let pendingQuantity = 0;
+            for (let i = 0; i < findPendingVehicule.quantity; i++) {
+              if (manufactureTimeVehicle <= limit) {
+                const newValue = (obj[idCurrentVehicle] || 0) + 1;
+                const aux = obj[idCurrentVehicle] || 0;
+                obj[idCurrentVehicle] = aux + 1;
+                limit -= manufactureTimeVehicle;
+              } else {
+                obj[idCurrentVehicle] = obj[idCurrentVehicle] || 0;
+                pendingQuantity += 1;
+              }
             }
-            console.log("horas", hours, "limite", limit, "pendite", pending);
+            pendingQuantity !== 0 &&
+              pending.push({
+                idVehiculo: idCurrentVehicle,
+                quantity: pendingQuantity,
+              });
           } else {
-            // console.log("sin valor")
             obj[idCurrentVehicle] = 0;
           }
+
+          if (findVehicule) {
+            let pendingQuantity = 0;
+            for (let i = 0; i < findVehicule.quantity; i++) {
+              if (manufactureTimeVehicle <= limit) {
+                const newValue = obj[idCurrentVehicle] + 1;
+                obj[idCurrentVehicle] = newValue;
+                limit -= manufactureTimeVehicle;
+              } else {
+                obj[idCurrentVehicle] = obj[idCurrentVehicle] || 0;
+                pendingQuantity += 1;
+              }
+            }
+            pendingQuantity !== 0 &&
+              pending.push({
+                idVehiculo: idCurrentVehicle,
+                quantity: pendingQuantity,
+              });
+          } else {
+            obj[idCurrentVehicle] = obj[idCurrentVehicle] + 0;
+          }
         }
+
         days.push(obj);
-        day.setDate(day.getDate() + 1);
+        day = moment(day).add(1, "days").format();
       }
-      // console.log(days);
       res.status(201).json(days);
     } catch (error) {
       res.status(400).json(error.message);
